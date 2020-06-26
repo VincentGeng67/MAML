@@ -7,12 +7,12 @@ from    torch import optim
 import  numpy as np
 import tensorflow as tf
 
-from    HGPLearner import HGPLearner
+from    SAGLearner import SAGLearner
 from    copy import deepcopy
 
 
 
-class HGPMeta(nn.Module):
+class SGAMeta(nn.Module):
     """
     Meta Learner
     """
@@ -20,7 +20,7 @@ class HGPMeta(nn.Module):
         """
         :param args:
         """
-        super(HGPMeta, self).__init__()
+        super(SGAMeta, self).__init__()
         print('parameters',update_lr,meta_lr)
         self.update_lr =update_lr
         self.meta_lr = meta_lr
@@ -28,16 +28,16 @@ class HGPMeta(nn.Module):
 #         self.k_spt = args.k_spt
 #         self.k_qry = args.k_qry
 #         self.task_num = args.task_num
-        self.update_step = 70
-        self.update_step_test=70
+        self.update_step = 3
+        self.update_step_test=3
         
 #         self.update_step_test = args.update_step_test
 
 
-        self.net = HGPLearner(way)
+        self.net = SAGLearner(way)
 
         
-        self.meta_optim = optim.Adam(self.net.parameters(), lr=meta_lr, weight_decay=0.001)
+        self.meta_optim = optim.Adam(self.net.parameters(), lr=meta_lr, weight_decay=0.0001)
 
 
 
@@ -85,7 +85,7 @@ class HGPMeta(nn.Module):
         for i in range(task_num):
 
             score,logits,loss,correct= self.net(x_spt[i],'train', vars=None, bn_training=True,init=True)
-
+        
        
 
             grad = torch.autograd.grad(loss, self.net.parameters())
@@ -121,22 +121,24 @@ class HGPMeta(nn.Module):
 
             
             
-
+            
+            
             for k in range(1, self.update_step):
                 # 1. run the i-th task and compute loss for k=1~K-1
 #                 logits = self.net(x_spt[i], fast_weights, bn_training=True)
 #                 loss = F.cross_entropy(logits, y_spt[i])
                 score,logits,loss,correct= self.net(x_spt[i],'train', fast_weights, bn_training=True)
-
                 
+    
                 
                 grad = torch.autograd.grad(loss,self.net.modelbn)
-#                 print('checkgrad1',grad[0])
+                print('checkgrad1',grad[0])
                 fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
-#                 print('fwit',k,fast_weights[0])
+                print('fwit',k,fast_weights[0])
 #                 print('sorrypred1',logits)
 #                 print('sorrylabel2',y_spt[i])
                 score_q,logits_q,loss_q,correct= self.net(x_qry[i],'test', fast_weights, bn_training=True)
+
 #                 loss_q = criterion(score_q, y_qry[i])
                 losses_q[k + 1] += loss_q
 
@@ -162,6 +164,7 @@ class HGPMeta(nn.Module):
         print('afterpara',self.net.parameters()[0])
 
         accs = np.array(corrects) / (task_num)
+        
         return accs,loss_q
 
 
@@ -180,18 +183,8 @@ class HGPMeta(nn.Module):
 
         # in order to not ruin the state of running_mean/variance and bn_weight/bias
         # we finetunning on the copied model instead of self.net
-#         net = deepcopy(self.net)
-        net = HGPLearner(self.net.way)
-        net.model=self.net.model
-        net.varstest=self.net.varstest
-        net.model.conv2.cached_result=self.net.model.conv2.cached_result
-        net.model.conv2.cached_num_edges=self.net.model.conv2.cached_num_edges
-        net.model.conv3.cached_result=self.net.model.conv3.cached_result
-        net.model.conv3.cached_num_edges=self.net.model.conv3.cached_num_edges
-        net.model.pool1.calc_information_score.cached_result=self.net.model.pool1.calc_information_score.cached_result
-        net.model.pool1.calc_information_score.cached_num_edges=self.net.model.pool1.calc_information_score.cached_num_edges
-        net.model.pool2.calc_information_score.cached_result=self.net.model.pool2.calc_information_score.cached_result
-        net.model.pool2.calc_information_score.cached_num_edges=self.net.model.pool2.calc_information_score.cached_num_edges
+        net = deepcopy(self.net)
+
         print('newpara',net.parameters()[0])
         # 1. run the i-th task and compute loss for k=0
         score,logits,loss,correct= net(x_spt,'train',init=True)
@@ -230,7 +223,7 @@ class HGPMeta(nn.Module):
 #             grad = torch.autograd.grad(loss, fast_weights)
             # 3. theta_pi = theta_pi - train_lr * grad
             fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
-#             print('fw ft',k,fast_weights[0])
+            print('fw ft',k,fast_weights[0])
             score_q,logits_q,loss_q,correct= net(x_qry,'test', fast_weights, bn_training=True)
 
 #             loss_q = criterion(score_q, y_qry)
